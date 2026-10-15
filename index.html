@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Nexus — self-hosted, no logs</title>
+<style>
+:root{--bg:#0b0d10;--panel:#13161b;--line:#232830;--txt:#e8eaed;--mut:#9aa3ad;--acc:#7dd3a8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg)}
+.dot{width:9px;height:9px;border-radius:50%;background:#555}#dot.ok{background:var(--acc)}
+nav{display:flex;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+nav button{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer}
+nav button.on{border-color:var(--acc)}
+main{max-width:900px;margin:0 auto;padding:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+input,textarea,select{width:100%;background:#0e1114;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:9px}
+textarea{min-height:70px;resize:vertical}
+button.go{background:var(--acc);border:0;color:#06281a;font-weight:700;border-radius:8px;padding:9px 14px;cursor:pointer}
+.row{display:flex;gap:8px}.row>*{flex:1}.mut{color:var(--mut);font-size:12px}
+#msgs{display:flex;flex-direction:column;gap:8px;max-height:55vh;overflow:auto;margin-bottom:10px}
+.msg{padding:10px;border-radius:10px;border:1px solid var(--line);white-space:pre-wrap;word-break:break-word}
+.u{background:#1a2b22;border-color:#2a4436}.a{background:#101318}
+.think{opacity:.75;font-size:12px;border-left:2px solid var(--acc);padding-left:8px;margin-bottom:6px;white-space:pre-wrap}
+pre{background:#00000055;padding:8px;border-radius:8px;overflow:auto}
+img.gen{max-width:100%;border-radius:10px;border:1px solid var(--line)}
+#term{background:#000;color:#c8ffb4;border-radius:10px;padding:12px;font-family:ui-monospace,monospace;min-height:220px;max-height:45vh;overflow:auto}
+.warn{background:#2a1e10;border:1px solid #6b4a1f;color:#ffd9a0;border-radius:8px;padding:8px;margin-bottom:10px;font-size:12px}
+img.thumb{max-height:60px;border-radius:6px;margin-right:6px}
+</style></head><body>
+<header><span id="dot" class="dot"></span><b>Nexus</b>
+<span class="mut">Chat · Image · Voice · Transcribe — no logs</span>
+<span style="flex:1"></span><span class="mut" id="stat">checking…</span></header>
+<nav>
+<button data-t="chat" class="on">chat</button><button data-t="image">image</button>
+<button data-t="voice">voice</button><button data-t="video">video</button>
+<button data-t="term">terminal</button>
+</nav>
+<main>
+<div class="card mut">Admin-configured models only. Users don't pick weights - backend forces fixed deployments. T4&nbsp;x2 ≈ 32GB total.</div>
+
+<section id="v-chat">
+<div class="card"><div class="row">
+<div class="mut"><b>Chat</b> - manual think + manual tools, works on gateway and local. Admin system prompt enforced.</div></div>
+<div class="row" style="margin-top:8px">
+<select id="c-reason" title="reasoning_effort"><option value="">reason: auto</option><option>none</option><option>minimal</option><option>low</option><option>medium</option><option>high</option></select>
+<select id="c-think" title="ollama think"><option value="">think: auto</option><option value="true">think: on</option><option value="false">think: off</option></select>
+<label class="mut"><input type="checkbox" id="c-tools" checked style="width:auto"> auto tools (local only)</label>
+<label class="mut"><input type="checkbox" id="c-manthink" checked style="width:auto"> manual think prefix</label>
+</div></div>
+<div id="msgs"></div>
+<div class="card">
+<div id="att"></div>
+<textarea id="inp" placeholder="message… manual: [think] prefixes reasoning, [tool] button runs code via /api/exec"></textarea>
+<textarea id="toolcode" placeholder="manual tool python code (optional) - Run tool sends this to sandbox"></textarea>
+<div class="row" style="margin-top:8px"><input type="file" id="c-file" multiple accept="image/*,.txt,.md,.json,.js,.py,.pdf">
+<button class="go" id="send">send</button><button id="thinkbtn">think</button><button id="toolbtn">run tool</button><button id="clr">clear</button><button id="live">live voice: off</button></div>
+<div class="mut">Manual think = prompt-level step-by-step, works anywhere. Manual tool = /api/exec sandbox, works anywhere. Auto tools/reasoning params local-only.</div></div>
+</section>
+
+<section id="v-image" hidden><div class="card">
+<div class="warn"><b>Image</b> - SFW only, always-on.</div>
+<textarea id="i-prompt" placeholder="a minimal fox logo, flat vector…"></textarea><br><br>
+<div class="row"><select id="i-size"><option>1024x1024</option><option>512x512</option><option>768x512</option></select>
+<button class="go" id="i-go">generate</button></div><div id="i-out" style="margin-top:10px"></div></div></section>
+
+<section id="v-voice" hidden>
+<div class="card"><b>Voice - text → speech</b><br><br>
+<textarea id="t-text" placeholder="say something…"></textarea><br><br>
+<button class="go" id="t-go">speak</button> <audio id="aud" controls style="width:100%;margin-top:8px"></audio></div>
+<div class="card"><b>Transcribe - speech → text</b><br><br>
+<input type="file" id="s-file" accept="audio/*"><br><br>
+<button class="go" id="s-go">transcribe</button><pre id="s-out">—</pre></div></section>
+
+<section id="v-video" hidden><div class="card">
+<div class="warn">SFW only. Video is heavy - one runner at a time, short clips on T4. Slow, be patient.</div>
+<textarea id="vd-prompt" placeholder="a fox walking in snow, 3s…"></textarea><br><br>
+<button class="go" id="vd-go">generate</button><pre id="vd-out">—</pre><div id="vd-media"></div></div></section>
+
+<section id="v-term" hidden><div class="card">
+<div class="warn">Sandboxed python only. No shell, no sudo, no rm, no network, 8s timeout, temp dir wiped. Allowed: math random datetime json re collections itertools statistics.</div>
+<div id="term"></div><br>
+<div class="row"><input id="t-in" placeholder='help, or: py print(2+2)'><button class="go" id="t-run">run</button></div>
+</div></section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const tabs=[...document.querySelectorAll("nav button")];
+tabs.forEach(b=>b.onclick=()=>{tabs.forEach(x=>x.classList.remove("on"));b.classList.add("on");
+["chat","image","voice","video","term"].forEach(t=>$("v-"+t).hidden=(t!==b.dataset.t))});
+let hist=[], pendImg=[], pendTxt="";
+async function health(){try{const r=await fetch("/api/models");const j=await r.json();
+$("stat").textContent=j.ready?("ready ("+j.count+" deployments) — admin configured"):"deployments not ready";
+$("dot").className="dot"+(j.ready?" ok":"");}catch(e){$("stat").textContent="kaggleui unreachable";}}health();
+function add(role,text,cls,thinking){const d=document.createElement("div");d.className="msg "+cls;
+if(thinking){const th=document.createElement("div");th.className="think";th.textContent="thinking: "+thinking.slice(0,2000);d.appendChild(th);}
+const b=document.createElement("div");b.textContent=(role?role+": ":"")+text;d.appendChild(b);
+if(text.includes("```python-run")){const btn=document.createElement("button");btn.textContent="Run in sandbox";
+btn.className="go";btn.style.marginTop="8px";
+btn.onclick=async()=>{const m=text.match(/```python-run([\s\S]*?)```/);if(!m)return;btn.disabled=true;
+const r=await fetch("/api/exec",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code:m[1]})});
+add("sandbox",JSON.stringify(await r.json()).slice(0,4000),"a");btn.disabled=false;};
+d.appendChild(document.createElement("br"));d.appendChild(btn);}
+$("msgs").appendChild(d);d.scrollIntoView();return d;}
+$("c-file").onchange=async e=>{pendImg=[];pendTxt="";$("att").innerHTML="";
+for(const f of e.target.files){if(f.type.startsWith("image/")){const du=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f)});
+pendImg.push(du);$("att").innerHTML+=`<img class="thumb" src="${du}">`;}
+else{const t=(await f.text()).slice(0,8000);pendTxt+=`\n[${f.name}]\n`+t;}}
+if(pendTxt)$("att").innerHTML+=`<span class="mut">+text file context (${pendTxt.length} chars)</span>`;};
+const PYTOOL={type:"function",function:{name:"run_python",description:"Run restricted python in sandbox, 8s, no os/sys/network. Use for calc/data.",parameters:{type:"object",properties:{code:{type:"string"}},required:["code"]}}};
+$("send").onclick=async()=>{const t=$("inp").value.trim();if(!t&&!pendImg.length)return;$("inp").value="";
+let content=t+(pendTxt?pendTxt:"");
+if($("c-manthink").checked)content="Think step-by-step, then answer:\n"+content;
+if(pendImg.length)content=[{type:"text",text:content||"describe images"}].concat(pendImg.map(u=>({type:"image_url",image_url:{url:u}})));
+add("you",t.slice(0,2000),"u");hist.push({role:"user",content});
+pendImg=[];pendTxt="";$("att").innerHTML="";$("c-file").value="";
+const msgs=[].concat(hist.slice(-20));
+const body={messages:msgs};
+const re=$("c-reason").value;if(re)body.reasoning_effort=re;
+const th=$("c-think").value;if(th)body.think=(th==="true");
+if($("c-tools").checked){body.tools=[PYTOOL];body.tool_choice="auto";}
+const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+const j=await r.json();const m=j.choices?.[0]?.message||{};
+const txt=m.content||(m.tool_calls? "[tool call executed, see follow-up]":"")+JSON.stringify(j).slice(0,500);
+const thinking=m.reasoning_content||m.reasoning||m.thinking||"";
+hist.push({role:"assistant",content:txt});add("ai",txt,"a",thinking);};
+$("thinkbtn").onclick=async()=>{const t=$("inp").value.trim()||"think through last answer";$("inp").value="";
+add("you(manual-think)",t,"u");const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
+body:JSON.stringify({messages:[{role:"user",content:"Think step-by-step about: "+t+" List reasoning, then conclusion."}]})});
+const j=await r.json();add("ai(think)",(j.choices?.[0]?.message?.content||JSON.stringify(j)).slice(0,4000),"a","manual");};
+$("toolbtn").onclick=async()=>{const code=$("toolcode").value;if(!code.trim())return alert("put python in tool box");
+const r=await fetch("/api/exec",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code})});
+const j=await r.json();add("tool(manual)",JSON.stringify(j).slice(0,4000),"a");hist.push({role:"user",content:"[tool code]\n"+code.slice(0,1000)});hist.push({role:"assistant",content:"[tool result]\n"+JSON.stringify(j).slice(0,1000)});};
+$("clr").onclick=()=>{hist=[];$("msgs").innerHTML="";};
+$("i-go").onclick=async()=>{const r=await fetch("/api/image",{method:"POST",headers:{"Content-Type":"application/json"},
+body:JSON.stringify({prompt:$("i-prompt").value,size:$("i-size").value})});
+const j=await r.json();const d=j.data?.[0];let h="<pre>"+JSON.stringify(j).slice(0,2000)+"</pre>";
+if(d?.b64_json)h=`<img class="gen" src="data:image/png;base64,${d.b64_json}">`;
+else if(d?.url)h=`<img class="gen" src="${d.url}">`;
+$("i-out").innerHTML=h;};
+$("t-go").onclick=async()=>{const r=await fetch("/api/tts",{method:"POST",headers:{"Content-Type":"application/json"},
+body:JSON.stringify({input:$("t-text").value})});
+if(!r.ok){alert(await r.text());return;}const b=await r.blob();$("aud").src=URL.createObjectURL(b);};
+async function b64file(f){const buf=await f.arrayBuffer();let bin="";const by=new Uint8Array(buf);
+for(let i=0;i<by.length;i+=8192)bin+=String.fromCharCode.apply(null,by.subarray(i,i+8192));return btoa(bin);}
+$("s-go").onclick=async()=>{const f=$("s-file").files[0];if(!f)return alert("pick audio");
+const r=await fetch("/api/stt",{method:"POST",headers:{"Content-Type":"application/json"},
+body:JSON.stringify({filename:f.name,audio_b64:await b64file(f)})});
+$("s-out").textContent=JSON.stringify(await r.json(),null,2).slice(0,4000);};
+$("vd-go").onclick=async()=>{const r=await fetch("/api/video",{method:"POST",headers:{"Content-Type":"application/json"},
+body:JSON.stringify({prompt:$("vd-prompt").value})});
+const j=await r.json();$("vd-out").textContent=JSON.stringify(j,null,2).slice(0,4000);
+const u=j.output?.url||j.data?.url||j.url;if(u)$("vd-media").innerHTML=`<video controls src="${u}" style="max-width:100%">`;};
+let liveOn=false;
+$("live").onclick=async()=>{liveOn=!liveOn;$("live").textContent="live voice: "+(liveOn?"on":"off");if(!liveOn)return;
+const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+while(liveOn){const rec=new MediaRecorder(stream);const chunks=[];rec.ondataavailable=e=>chunks.push(e.data);
+rec.start();await new Promise(r=>setTimeout(r,4000));rec.stop();await new Promise(r=>rec.onstop=r);
+const blob=new Blob(chunks);const buf=await blob.arrayBuffer();let bin="";const by=new Uint8Array(buf);
+for(let i=0;i<by.length;i+=8192)bin+=String.fromCharCode.apply(null,by.subarray(i,i+8192));
+const stt=await (await fetch("/api/stt",{method:"POST",headers:{"Content-Type":"application/json"},
+body:JSON.stringify({filename:"live.webm",audio_b64:btoa(bin)})})).json();
+const txt=stt.text||"";if(!txt.trim())continue;add("you(live)",txt,"u");
+const chat=await (await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
+body:JSON.stringify({messages:[{role:"user",content:txt}]})})).json();
+const reply=chat.choices?.[0]?.message?.content||"";add("ai(live)",reply,"a");
+const tts=await fetch("/api/tts",{method:"POST",headers:{"Content-Type":"application/json"},
+body:JSON.stringify({input:reply.slice(0,500)})});
+if(tts.ok){$("aud").src=URL.createObjectURL(await tts.blob());$("aud").play();}}};
+function termPrint(s){const t=$("term");t.textContent+=s+"\n";t.scrollTop=t.scrollHeight;}
+termPrint("sandbox terminal — type help");
+$("t-run").onclick=async()=>{const v=$("t-in").value;$("t-in").value="";termPrint("$ "+v);
+if(v==="help"){termPrint("help/echo/ls/pwd/date/clear local\npy <code> sandboxed");return;}
+if(v==="clear"){$("term").textContent="";return;}
+if(v.startsWith("echo "))termPrint(v.slice(5));else if(v==="ls")termPrint("sandbox/ (empty, wiped)");
+else if(v==="pwd")termPrint("/tmp/ai-sandbox-xxx");else if(v==="date")termPrint(new Date().toString());
+else if(v.startsWith("py ")){const r=await fetch("/api/exec",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code:v.slice(3)})});
+termPrint(JSON.stringify(await r.json(),null,2).slice(0,3000));}
+else termPrint("blocked: only help/echo/ls/pwd/date/clear or py <code>.");};
+</script></body></html>
