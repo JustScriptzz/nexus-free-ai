@@ -13,12 +13,11 @@ import json, os, subprocess, time, sys, pathlib
 SITE_DIR = "/kaggle/working/free-ai-website"  # change if you cloned elsewhere
 KUI_HOME = os.environ.get("KAGGLEUI_HOME", "/tmp/kaggleui")
 
-# 1. show where the key lives
+# 1. load credentials server-side only, never print secrets
 st = json.loads(open(f"{KUI_HOME}/state.json").read())
-print("KaggleUI:", st.get("url"))
-print("api_key:", (st.get("api_key") or "MISSING")[:6] + "..." if st.get("api_key") else "MISSING")
-print("Tip: full key also on launch card + panel Access & API. To keep same key next session, set Kaggle secret KAGGLEUI_API_KEY.")
-print("Models Ready: deploy text/image/tts/stt (+ optional video, heavy) in KaggleUI first. T4x2=~32GB total, load 1-2 at a time.")
+public_url = str(st.get("url") or "").split("?")[0]  # strip ?token= admin token
+print("KaggleUI ready:", "yes" if st.get("url") else "no", public_url)
+print("Models Ready: deploy text/image/tts/stt in KaggleUI first. T4x2=~32GB total.")
 
 # --- ADMIN: ONE of each, users never see these; backend forces them ---
 FIXED_TEXT_MODEL = "dolphin-24b"   # <-- replace with your Ready uncensored deployment name

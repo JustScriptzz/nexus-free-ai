@@ -206,9 +206,8 @@ class Handler(BaseHTTPRequestHandler):
                 n = len(json.loads(b).get("data", []))
             except Exception:
                 n = -1
-            return self.send_json({"site": "ok", "kaggleui": KUI_BASE,
-                                   "kaggleui_reachable": s == 200, "models": n,
-                                   "no_logs": True})
+            return self.send_json({"site": "ok", "ready": s == 200,
+                                   "count": n, "no_logs": True})
         if self.path == "/api/models":
             # do not leak deployment names to users; only readiness
             s, _, b = kui_request("/v1/models")
