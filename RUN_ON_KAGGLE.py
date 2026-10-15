@@ -61,12 +61,15 @@ print("site backend pid:", srv.pid, "-> http://127.0.0.1:8000 (local to notebook
 
 # 3. public tunnel for the site (separate from KaggleUI tunnel)
 CF = "/tmp/cf-site/cloudflared"
+# download to /tmp (executable), not /kaggle/working (noexec -> PermissionError)
 if not os.path.exists(CF):
     os.makedirs("/tmp/cf-site", exist_ok=True)
     print("downloading cloudflared...")
     import urllib.request
     u = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
     urllib.request.urlretrieve(u, CF); os.chmod(CF, 0o755)
+elif not os.access(CF, os.X_OK):
+    os.chmod(CF, 0o755)
 
 log = open("/tmp/cf-site.log", "w")
 tun = subprocess.Popen([CF, "tunnel", "--url", "http://127.0.0.1:8000", "--no-autoupdate"],
