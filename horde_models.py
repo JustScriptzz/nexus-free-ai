@@ -18,8 +18,13 @@ def score(m):
     count = int(m.get("count") or 0)
     if count <= 0 or perf <= 0:
         return -1
+    if eta > 900:
+        return -1  # hide unusable long-queue workers ("won't fit/serve")
     # penalize queue: eta seconds to clear
     return perf / (1 + eta / 30.0)
+
+PINNED = {"name": "gemini/gemini-3-flash", "source": "llmhub-gateway",
+          "note": "owner gateway, top pick, API-only (no VRAM fit)"}
 
 def pick(models, top=8):
     ranked = sorted(models, key=score, reverse=True)
@@ -28,7 +33,8 @@ def pick(models, top=8):
 if __name__ == "__main__":
     models = fetch()
     best = pick(models, 10)
-    print(f"fetched {len(models)} text models")
+    print(f"fetched {len(models)} text models (hidden: count==0 or eta>900)")
+    print(f"TOP PICK: {PINNED['name']} [{PINNED['source']}] - {PINNED['note']}")
     print(f"{'score':>7} {'tps':>6} {'eta':>5} {'wrk':>3}  name")
     for m in best:
         print(f"{score(m):7.2f} {m['performance']:6.1f} {m['eta']:5.0f} {m['count']:3d}  {m['name']}")
