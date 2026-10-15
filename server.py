@@ -26,18 +26,20 @@ def load_kui():
     state_file = os.path.join(home, "state.json")
     base = os.environ.get("KAGGLEUI_BASE", "")
     api_key = os.environ.get("KAGGLEUI_API_KEY", "")
+    admin_token = os.environ.get("KAGGLEUI_ADMIN_TOKEN", "")
     port = int(os.environ.get("KAGGLEUI_PORT", "8890"))
     try:
         st = json.loads(open(state_file).read())
         port = int(st.get("port", port))
         api_key = api_key or st.get("api_key", "")
+        admin_token = admin_token or st.get("admin_token", "")
     except Exception:
         pass
     if not base:
         base = f"http://127.0.0.1:{port}"
-    return base.rstrip("/"), api_key
+    return base.rstrip("/"), api_key, admin_token
 
-KUI_BASE, KUI_KEY = load_kui()
+KUI_BASE, KUI_KEY, ADMIN_TOKEN = load_kui()
 
 # Admin-locked models: users never pick. Set these envs on Kaggle backend only.
 # Frontend sends no model names; backend forces these. Keeps deployment private.
@@ -168,6 +170,51 @@ def run_sandboxed(code: str):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+# ---------- admin-gated catalog: Ready list + live HF/Ollama discovery ----------
+# Users never see this; admin unlocks with the KaggleUI admin token (memory only).
+OLLAMA_CATALOG = [
+    "qwen3:0.6b", "qwen3:1.7b", "qwen3:4b", "qwen3:8b", "qwen3:14b", "qwen3:32b",
+    "qwen2.5:0.5b", "qwen2.5:1.5b", "qwen2.5:3b", "qwen2.5:7b", "qwen2.5:14b", "qwen2.5:32b",
+    "qwen2.5-coder:1.5b", "qwen2.5-coder:3b", "qwen2.5-coder:7b", "qwen2.5-coder:14b", "qwen2.5-coder:32b",
+    "llama3.2:1b", "llama3.2:3b", "llama3.1:8b",
+    "mistral:7b", "mistral-small:24b",
+    "dolphin-mistral", "dolphin-llama3:8b", "dolphin3:8b",
+    "gemma3:1b", "gemma3:4b", "gemma3:12b", "gemma3:27b",
+    "deepseek-r1:1.5b", "deepseek-r1:7b", "deepseek-r1:8b", "deepseek-r1:14b", "deepseek-r1:32b",
+    "starcoder2:3b", "starcoder2:7b", "starcoder2:15b",
+    "codellama:7b", "codellama:13b", "phi4", "openhermes",
+]
+
+def ollama_fit(tag: str) -> str:
+    import re
+    m = re.search(r":(\d+(?:\.\d+)?)b", tag)
+    if not m:
+        return "check Fits in KaggleUI"
+    gb = float(m.group(1)) * 0.6
+    if gb <= 8:
+        return f"~{gb:.0f}GB Q4: Fits easily"
+    if gb <= 15:
+        return f"~{gb:.0f}GB Q4: Fits"
+    if gb <= 20:
+        return f"~{gb:.0f}GB Q4: Tight, unload image first"
+    return f"~{gb:.0f}GB Q4: Won't fit T4x2 with others"
+
+def hf_catalog(pipe: str, query: str, limit: int):
+    import urllib.parse
+    q = {"filter": pipe, "sort": "likes", "direction": "-1", "limit": str(max(1, min(limit, 100)))}
+    if query:
+        q["search"] = query
+    url = "https://huggingface.co/api/models?" + urllib.parse.urlencode(q)
+    req = urllib.request.Request(url, headers={"User-Agent": "nexus-free-ai/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        items = json.loads(r.read())
+    out = []
+    for m in items:
+        out.append({"id": m.get("modelId") or m.get("id"), "likes": m.get("likes", 0),
+                    "downloads": m.get("downloads", 0),
+                    "tags": (m.get("tags") or [])[:6], "fit": "check Fits in KaggleUI"})
+    return out
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         # privacy: never log URLs with prompts or bodies, only errors to stderr
@@ -197,6 +244,11 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b)
 
+    def is_admin(self):
+        if not ADMIN_TOKEN:
+            return False
+        return self.headers.get("Authorization") == f"Bearer {ADMIN_TOKEN}"
+
     def do_GET(self):
         if self.path == "/" or self.path.startswith("/?"):
             return self.serve_index()
@@ -216,6 +268,37 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 n = -1
             return self.send_json({"ready": s == 200, "count": n})
+        if self.path == "/api/admin/models":
+            if not self.is_admin():
+                return self.send_json({"error": "admin token required"}, 401)
+            s, _, b = kui_request("/v1/models")
+            try:
+                return self.send_json(json.loads(b), s)
+            except Exception:
+                return self.send_json({"error": "bad upstream"}, 502)
+        if self.path.startswith("/api/catalog"):
+            if not self.is_admin():
+                return self.send_json({"error": "admin token required"}, 401)
+            import urllib.parse
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            ctype = (qs.get("type") or ["image"])[0]
+            query = (qs.get("q") or [""])[0][:80]
+            try:
+                limit = int((qs.get("limit") or ["40"])[0])
+            except Exception:
+                limit = 40
+            try:
+                if ctype == "text":
+                    items = [{"id": t, "likes": 0, "downloads": 0, "tags": ["ollama"],
+                              "fit": ollama_fit(t)}
+                             for t in OLLAMA_CATALOG if query.lower() in t.lower()][:limit]
+                elif ctype == "video":
+                    items = hf_catalog("text-to-video", query, limit)
+                else:
+                    items = hf_catalog("text-to-image", query, limit)
+                return self.send_json({"type": ctype, "count": len(items), "items": items})
+            except Exception as e:
+                return self.send_json({"error": f"catalog fetch failed: {e}"}, 502)
         return self.send_json({"error": "not found"}, 404)
 
     def read_json(self):
