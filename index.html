@@ -37,7 +37,7 @@ img.thumb{max-height:60px;border-radius:6px;margin-right:6px}
 <nav>
 <button data-t="chat" class="on">chat</button><button data-t="image">image</button>
 <button data-t="voice">voice</button><button data-t="video">video</button>
-<button data-t="term">terminal</button><button id="admbtn">admin</button>
+<button data-t="term">terminal</button>
 </nav>
 <main>
 <div class="card mut">Admin-configured models only. Users don't pick weights - backend forces fixed deployments. T4&nbsp;x2 ≈ 32GB total.</div>
@@ -100,10 +100,12 @@ img.thumb{max-height:60px;border-radius:6px;margin-right:6px}
 <script>
 const $=id=>document.getElementById(id);
 const tabs=[...document.querySelectorAll("nav button")];
-tabs.forEach(b=>b.onclick=()=>{if(b.id==="admbtn"){$("v-admin").hidden=false;tabs.forEach(x=>x.classList.remove("on"));b.classList.add("on");
-["chat","image","voice","video","term"].forEach(t=>$("v-"+t).hidden=true);return;}
-tabs.forEach(x=>x.classList.remove("on"));b.classList.add("on");$("v-admin").hidden=true;
+function showAdmin(){tabs.forEach(x=>x.classList.remove("on"));$("v-admin").hidden=false;
+["chat","image","voice","video","term"].forEach(t=>$("v-"+t).hidden=true);}
+tabs.forEach(b=>b.onclick=()=>{tabs.forEach(x=>x.classList.remove("on"));b.classList.add("on");$("v-admin").hidden=true;
 ["chat","image","voice","video","term"].forEach(t=>$("v-"+t).hidden=(t!==b.dataset.t))});
+if(location.hash==="#admin")showAdmin();
+addEventListener("hashchange",()=>{if(location.hash==="#admin")showAdmin();});
 let AH=""; // admin token, memory only
 $("adm-go").onclick=async()=>{AH=$("adm-tok").value.trim();$("adm-tok").value="";if(!AH)return;
 const r=await fetch("/api/admin/models",{headers:{"Authorization":"Bearer "+AH}});
