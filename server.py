@@ -59,6 +59,13 @@ NAMES = {
     "stt": os.environ.get("STT_NAME", "Transcribe"),
 }
 FIXED_SYSTEM = os.environ.get("FIXED_SYSTEM_PROMPT", "")
+# Owner cloud gateway (your llmhub). API-only, no VRAM. Key stays server-side.
+# Unlike local T4 path (no logs), cloud MAY LOG on the gateway - UI warns.
+CLOUD = {
+    "model": os.environ.get("CLOUD_TEXT_MODEL", "gemini/gemini-3-flash"),
+    "base": os.environ.get("LLMHUB_BASE", "https://llmhub.llmhub.workers.dev/v1").rstrip("/"),
+    "key": os.environ.get("LLMHUB_KEY", ""),
+}
 
 # Always-on SFW gate for image prompts. No toggle to disable.
 # Keeps local T4 runs lawful: blocks explicit sexual content and any
@@ -104,6 +111,41 @@ def kui_request(path, method="GET", body=None, content_type="application/json", 
         return e.code, "application/json", e.read()
     except Exception as e:
         return 502, "application/json", json.dumps({"error": f"kaggleui unreachable at {url}: {e}. Is a model deployed and Ready?"}).encode()
+
+def cloud_request(body):
+    """Owner gateway chat. Strips local-only params; manual think/tools still work prompt-level."""
+    if not CLOUD["key"]:
+        return 503, {"error": "cloud model not configured by admin (LLMHUB_KEY missing)"}
+    clean = {k: v for k, v in body.items()
+             if k not in ("tools", "tool_choice", "think", "reasoning_effort")}
+    clean["model"] = CLOUD["model"]
+    # gateway ignores vision blocks; keep text so it never goes blank
+    fixed_msgs = []
+    for m in clean.get("messages", []):
+        c = m.get("content")
+        if isinstance(c, list):
+            txt = " ".join(p.get("text", "") for p in c if p.get("type") == "text").strip()
+            fixed_msgs.append({**m, "content": txt or "[image omitted on cloud]"})
+        else:
+            fixed_msgs.append(m)
+    clean["messages"] = fixed_msgs
+    return kui_request_raw(CLOUD["base"] + "/chat/completions", clean, CLOUD["key"])
+
+def kui_request_raw(url, body, key):
+    data = json.dumps(body).encode()
+    req = urllib.request.Request(url, data=data, method="POST")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", f"Bearer {key}")
+    try:
+        with urllib.request.urlopen(req, timeout=300) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read())
+        except Exception:
+            return e.code, {"error": "cloud error"}
+    except Exception as e:
+        return 502, {"error": f"cloud unreachable: {e}"}
 
 # ---------- sandboxed python exec ----------
 ALLOWED_IMPORTS = {"math", "random", "datetime", "json", "re", "collections",
@@ -259,7 +301,10 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 n = -1
             return self.send_json({"site": "ok", "ready": s == 200,
-                                   "count": n, "no_logs": True})
+                                   "count": n, "no_logs": True,
+                                   "cloud": {"model": CLOUD["model"], "source": "owner gateway",
+                                             "configured": bool(CLOUD["key"]),
+                                             "warn": "CLOUD MODEL - might log"}})
         if self.path == "/api/models":
             # do not leak deployment names to users; only readiness
             s, _, b = kui_request("/v1/models")
@@ -289,9 +334,12 @@ class Handler(BaseHTTPRequestHandler):
                 limit = 40
             try:
                 if ctype == "text":
-                    items = [{"id": t, "likes": 0, "downloads": 0, "tags": ["ollama"],
-                              "fit": ollama_fit(t)}
-                             for t in OLLAMA_CATALOG if query.lower() in t.lower()][:limit]
+                    items = [{"id": CLOUD["model"], "likes": 0, "downloads": 0,
+                              "tags": ["CLOUD MODEL", "owner gateway"],
+                              "fit": "API-only, no VRAM - MIGHT LOG"}]
+                    items += [{"id": t, "likes": 0, "downloads": 0, "tags": ["ollama", "local, no logs"],
+                               "fit": ollama_fit(t)}
+                              for t in OLLAMA_CATALOG if query.lower() in t.lower()][:max(0, limit - 1)]
                 elif ctype == "video":
                     items = hf_catalog("text-to-video", query, limit)
                 else:
@@ -322,6 +370,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/chat":
             body = self.read_json()
+            if body.get("via") == "cloud":
+                body.pop("via", None)
+                s, obj = cloud_request(body)
+                return self.send_json(obj, s if s < 500 else 502)
+            body.pop("via", None)
             if FIXED["chat"]:
                 body["model"] = FIXED["chat"]
             elif not body.get("model"):

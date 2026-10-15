@@ -38,6 +38,9 @@ FIXED_SYSTEM_PROMPT = (
     "Image is SFW-only. Stay lawful. No logs."
 )
 
+CLOUD_TEXT_MODEL = "gemini/gemini-3-flash"  # CLOUD MODEL - owner gateway, might log
+LLMHUB_BASE = "https://llmhub.llmhub.workers.dev/v1"
+# set Kaggle Secret LLMHUB_KEY (toggle ON for notebook); value never printed
 # 2. start site backend (background, no request logging)
 srv = subprocess.Popen([sys.executable, f"{SITE_DIR}/server.py"],
     cwd=SITE_DIR, env={**os.environ, "SITE_PORT": "8000",
@@ -49,7 +52,9 @@ srv = subprocess.Popen([sys.executable, f"{SITE_DIR}/server.py"],
     "FIXED_VIDEO_MODEL": FIXED_VIDEO_MODEL,
     "SITE_NAME": SITE_NAME, "CHAT_NAME": CHAT_NAME, "IMAGE_NAME": IMAGE_NAME,
     "TTS_NAME": TTS_NAME, "STT_NAME": STT_NAME,
-    "FIXED_SYSTEM_PROMPT": FIXED_SYSTEM_PROMPT},
+    "FIXED_SYSTEM_PROMPT": FIXED_SYSTEM_PROMPT,
+    "CLOUD_TEXT_MODEL": CLOUD_TEXT_MODEL, "LLMHUB_BASE": LLMHUB_BASE,
+    "LLMHUB_KEY": os.environ.get("LLMHUB_KEY", "")},
     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 time.sleep(2)
 print("site backend pid:", srv.pid, "-> http://127.0.0.1:8000 (local to notebook)")

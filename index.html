@@ -44,6 +44,7 @@ img.thumb{max-height:60px;border-radius:6px;margin-right:6px}
 <div class="row" style="margin-top:8px">
 <select id="c-reason" title="reasoning_effort"><option value="">reason: auto</option><option>none</option><option>minimal</option><option>low</option><option>medium</option><option>high</option></select>
 <select id="c-think" title="ollama think"><option value="">think: auto</option><option value="true">think: on</option><option value="false">think: off</option></select>
+<select id="c-via" title="route"><option value="local">local (no logs)</option><option value="cloud">CLOUD MODEL (might log)</option></select>
 <label class="mut"><input type="checkbox" id="c-tools" checked style="width:auto"> auto tools (local only)</label>
 <label class="mut"><input type="checkbox" id="c-manthink" checked style="width:auto"> manual think prefix</label>
 </div></div>
@@ -139,7 +140,7 @@ if(pendImg.length)content=[{type:"text",text:content||"describe images"}].concat
 add("you",t.slice(0,2000),"u");hist.push({role:"user",content});
 pendImg=[];pendTxt="";$("att").innerHTML="";$("c-file").value="";
 const msgs=[].concat(hist.slice(-20));
-const body={messages:msgs};
+const body={messages:msgs,via:$("c-via").value};
 const re=$("c-reason").value;if(re)body.reasoning_effort=re;
 const th=$("c-think").value;if(th)body.think=(th==="true");
 if($("c-tools").checked){body.tools=[PYTOOL];body.tool_choice="auto";}
@@ -150,7 +151,7 @@ const thinking=m.reasoning_content||m.reasoning||m.thinking||"";
 hist.push({role:"assistant",content:txt});add("ai",txt,"a",thinking);};
 $("thinkbtn").onclick=async()=>{const t=$("inp").value.trim()||"think through last answer";$("inp").value="";
 add("you(manual-think)",t,"u");const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
-body:JSON.stringify({messages:[{role:"user",content:"Think step-by-step about: "+t+" List reasoning, then conclusion."}]})});
+body:JSON.stringify({via:$("c-via").value,messages:[{role:"user",content:"Think step-by-step about: "+t+" List reasoning, then conclusion."}]})});
 const j=await r.json();add("ai(think)",(j.choices?.[0]?.message?.content||JSON.stringify(j)).slice(0,4000),"a","manual");};
 $("toolbtn").onclick=async()=>{const code=$("toolcode").value;if(!code.trim())return alert("put python in tool box");
 const r=await fetch("/api/exec",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code})});
@@ -186,7 +187,7 @@ const stt=await (await fetch("/api/stt",{method:"POST",headers:{"Content-Type":"
 body:JSON.stringify({filename:"live.webm",audio_b64:btoa(bin)})})).json();
 const txt=stt.text||"";if(!txt.trim())continue;add("you(live)",txt,"u");
 const chat=await (await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
-body:JSON.stringify({messages:[{role:"user",content:txt}]})})).json();
+body:JSON.stringify({via:$("c-via").value,messages:[{role:"user",content:txt}]})})).json();
 const reply=chat.choices?.[0]?.message?.content||"";add("ai(live)",reply,"a");
 const tts=await fetch("/api/tts",{method:"POST",headers:{"Content-Type":"application/json"},
 body:JSON.stringify({input:reply.slice(0,500)})});
