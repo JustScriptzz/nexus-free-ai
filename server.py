@@ -378,7 +378,7 @@ class Handler(BaseHTTPRequestHandler):
             if FIXED["chat"]:
                 body["model"] = FIXED["chat"]
             elif not body.get("model"):
-                return self.send_json({"error": "text model not configured by admin"}, 503)
+                return self.send_json({"error": "Chat is starting, try again soon."}, 503)
             # force admin system prompt, drop any client-supplied system to keep behavior consistent
             msgs = [m for m in body.get("messages", []) if m.get("role") != "system"]
             if FIXED_SYSTEM:
@@ -421,7 +421,7 @@ class Handler(BaseHTTPRequestHandler):
             if FIXED["image"]:
                 body["model"] = FIXED["image"]
             elif not body.get("model"):
-                return self.send_json({"error": "image model not configured by admin"}, 503)
+                return self.send_json({"error": "Image is starting, try again soon."}, 503)
             prompt = str(body.get("prompt", "") or "")
             blocked, reason = blocked_image_prompt(prompt)
             if blocked:
@@ -432,7 +432,7 @@ class Handler(BaseHTTPRequestHandler):
             if FIXED["video"]:
                 body["model"] = FIXED["video"]
             elif not body.get("model"):
-                return self.send_json({"error": "video model not configured by admin"}, 503)
+                return self.send_json({"error": "Video is off right now."}, 503)
             prompt = str(body.get("prompt", "") or "")
             blocked, reason = blocked_image_prompt(prompt)
             if blocked:
@@ -447,7 +447,7 @@ class Handler(BaseHTTPRequestHandler):
             if FIXED["tts"]:
                 body["model"] = FIXED["tts"]
             elif not body.get("model"):
-                return self.send_json({"error": "tts model not configured by admin"}, 503)
+                return self.send_json({"error": "Voice is starting, try again soon."}, 503)
             s, ct, b = kui_request("/v1/audio/speech", "POST", body)
             if s != 200:
                 try:
@@ -469,7 +469,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": "bad audio_b64"}, 400)
             model = FIXED["stt"] or str(body.get("model", ""))
             if not model:
-                return self.send_json({"error": "stt model not configured by admin"}, 503)
+                return self.send_json({"error": "Transcribe is starting, try again soon."}, 503)
             fname = str(body.get("filename", "audio.webm"))[:80]
             boundary = "----aiwebsite1234"
             parts = []

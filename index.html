@@ -92,7 +92,7 @@ img.thumb{max-height:60px;border-radius:6px;margin-right:6px}
 <div class="row"><input id="adm-tok" type="password" placeholder="KaggleUI admin token"><button class="go" id="adm-go">unlock</button><button id="adm-clr">lock</button></div>
 <div class="mut" id="adm-stat">locked - users see Chat/Image/Voice only.</div></div>
 <div class="card" id="adm-ready" hidden><b>Ready now</b><pre id="adm-list">—</pre></div>
-<div class="card" id="adm-cat" hidden><b>Catalog</b> <span class="mut">live HF top-liked + 40 Ollama tags. Copy name → deploy in KaggleUI → set FIXED_*.</span><br><br>
+<div class="card" id="adm-cat" hidden><b>Catalog</b> <span class="mut">live HF top-liked + 40 Ollama tags. Deploy only Launchable ones in KaggleUI (Models → Launchable only + Fits this GPU), then set FIXED_*.</span><br><br>
 <div class="row"><select id="cat-type"><option value="image">image (HF text-to-image)</option><option value="video">video (HF text-to-video)</option><option value="text">text (Ollama 40)</option></select>
 <input id="cat-q" placeholder="search, e.g. turbo, wan, dolphin"><button class="go" id="cat-go">load</button></div>
 <div id="cat-out" style="margin-top:10px"></div></div></section>
