@@ -6,9 +6,14 @@ PORT = st["port"]
 ADMIN = st["admin_token"]
 BASE = f"http://127.0.0.1:{PORT}"
 
+# Uncensored coder model, Q4_K_M ~9GB, Apache-2.0, ungated (no HF_TOKEN needed).
+# Runs on the ollama engine, split across both T4s. Falls back to qwen2.5:14b (censored).
+TEXT_PRIMARY = {"source": "hf", "id": "bartowski/Qwen2.5-Coder-14B-Instruct-abliterated-GGUF",
+                "variant": "Q4_K_M", "engine": "ollama"}
+TEXT_FALLBACK = {"source": "ollama", "id": "qwen2.5:14b", "engine": "ollama"}
+
 DEPLOYMENTS = [
-    ("text", "nexus-chat", {"source": "ollama", "id": "qwen2.5:14b", "engine": "ollama"},
-     {"ctx": 8192}),
+    ("text", "nexus-chat", TEXT_PRIMARY, {"ctx": 8192}),
     ("image", "nexus-forge", {"source": "hf", "id": "stabilityai/sdxl-turbo", "engine": "diffusers"},
      {"dtype": "float16"}),
     ("tts", "nexus-voice", {"source": "hf", "id": "hexgrad/Kokoro-82M", "engine": "kokoro"}, {}),
@@ -37,9 +42,14 @@ for modality, name, model, options in DEPLOYMENTS:
     spec = {"modality": modality, "model": model, "name": name,
             "interface": "studio", "options": options}
     code, out = call("POST", "/_kui/api/deployments", spec)
-    dep_id = out.get("id", "")
-    created.append(dep_id)
-    print(f"CREATE {name:14s} http={code} id={dep_id} {out.get('status','')} {str(out)[:120]}")
+    # if the GGUF variant is rejected by the engine, retry the plain ollama tag
+    if name == "nexus-chat" and (code >= 400 or out.get("status") == "error"):
+        print(f"  primary text spec rejected (http={code}); falling back")
+        spec["model"] = TEXT_FALLBACK
+        code, out = call("POST", "/_kui/api/deployments", spec)
+    created.append(out.get("id", ""))
+    print(f"CREATE {name:14s} http={code} id={out.get('id','')} {out.get('status','')} "
+          f"{str(out.get('message',''))[:100]}")
 
 print("\nwaiting for deployments to become ready (installs + downloads take a while)...")
 deadline = time.time() + 1500
