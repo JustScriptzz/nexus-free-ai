@@ -154,12 +154,28 @@ else:
             ref = {"source": "attached", "id": models[0].get("path"),
                    "engine": "ollama"}
         if ref:
+            # Swap, do not add. The censored 14B holds ~9GB and the new one needs
+            # ~9GB; together they OOM the T4s. qwen2.5:14b is a plain ollama tag,
+            # so it is one call away if the uncensored model fails.
+            print("  stopping censored nexus-chat to free VRAM for the swap")
+            for d in deployments():
+                if d.get("name") == "nexus-chat":
+                    delete(d)
+            time.sleep(15)
             out = create(UNCENSORED_NAME, "text", ref, {"ctx": 8192})
             if out.get("status") == "error":
                 print("  attached+ollama failed, retrying as hf source...")
-                create(UNCENSORED_NAME, "text",
-                       {"source": "hf", "id": UNCENSORED_URL.split("/")[-1],
-                        "engine": "ollama"}, {"ctx": 8192})
+                out = create(UNCENSORED_NAME, "text",
+                             {"source": "hf", "id": UNCENSORED_URL.split("/")[-1],
+                              "engine": "ollama"}, {"ctx": 8192})
+            # If the uncensored model did not take, put the censored one straight back
+            if out.get("status") == "error":
+                print("  uncensored deploy failed -> restoring censored nexus-chat")
+                create("nexus-chat", "text",
+                       {"source": "ollama", "id": "qwen2.5:14b", "engine": "ollama"},
+                       {"ctx": 8192})
+            else:
+                print("  censored nexus-chat intentionally left stopped (swap)")
 
 print("\n== 4. wait for everything to settle ==")
 deadline = time.time() + 1800
