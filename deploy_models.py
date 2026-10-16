@@ -17,6 +17,7 @@ Design notes (learned the hard way):
 import json
 import os
 import re
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -104,40 +105,58 @@ for name, modality, model, options in CORE:
     create(name, modality, model, options)
 
 print("\n== 3. uncensored model: import the GGUF, then deploy it ==")
-_, imports = call("GET", "/_kui/api/catalog/imports")
-if not isinstance(imports, dict):
-    imports = {}
-existing = None
-for job in (imports.get("imports") or imports.get("jobs") or imports.get("data") or []):
-    if UNCENSORED_URL in str(job.get("url", "")) and job.get("status") == "complete":
-        existing = job
-        break
 
-if existing:
-    print(f"  GGUF already imported: {existing.get('ident')}")
-    job = existing
+
+def import_jobs():
+    _, snap = call("GET", "/_kui/api/catalog/imports")
+    if isinstance(snap, list):
+        return snap
+    if isinstance(snap, dict):
+        for key in ("imports", "jobs", "data", "items"):
+            if isinstance(snap.get(key), list):
+                return snap[key]
+    return []
+
+
+def find_job():
+    """Match by repo/url substring. The POST response has no stable ident key, so
+    never rely on one - match the job in the list instead."""
+    for j in import_jobs():
+        blob = " ".join(str(j.get(k, "")) for k in ("url", "repo", "name", "ident", "id"))
+        if "abliterated" in blob.lower():
+            return j
+    return None
+
+
+DONE = ("complete", "failed", "error", "cancelled")
+
+job = find_job()
+if job:
+    print(f"  existing import found: status={job.get('status')} "
+          f"({str(job)[:120]})")
 else:
-    code, job = call("POST", "/_kui/api/catalog/imports",
-                     {"url": UNCENSORED_URL, "kind": "auto", "name": "", "revision": None})
-    print(f"  import requested http={code} ident={job.get('ident')} {str(job)[:160]}")
-    ident = job.get("ident")
-    if ident:
-        print("  waiting for GGUF download (~9GB)...")
-        for _ in range(90):
-            time.sleep(20)
-            _, snap = call("GET", "/_kui/api/catalog/imports")
-            for j in (snap.get("imports") or snap.get("jobs") or snap.get("data") or []):
-                if j.get("ident") == ident:
-                    job = j
-                    break
-            print(f"    status={job.get('status')} "
-                  f"progress={round((job.get('progress') or 0) * 100)}%", flush=True)
-            if job.get("status") in ("complete", "failed", "error", "cancelled"):
-                break
+    code, resp = call("POST", "/_kui/api/catalog/imports",
+                      {"url": UNCENSORED_URL, "kind": "auto", "name": "",
+                       "revision": None})
+    print(f"  import requested http={code} {str(resp)[:200]}")
+    job = find_job()
+
+if job and job.get("status") not in DONE:
+    print("  waiting for GGUF download (~9GB, can take a while on Kaggle)...")
+    for _ in range(150):
+        time.sleep(20)
+        j = find_job()
+        if j:
+            job = j
+        print(f"    status={job.get('status')} "
+              f"progress={round((job.get('progress') or 0) * 100)}%", flush=True)
+        if job.get("status") in DONE:
+            break
 
 print(f"  import final: status={job.get('status')}")
 if job.get("status") != "complete":
     print("  GGUF import did not complete. Censored nexus-chat stays live.")
+    sys.exit(0)
 else:
     models = job.get("models") or []
     print(f"  detected {len(models)} model file(s): "
