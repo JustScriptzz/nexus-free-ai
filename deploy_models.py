@@ -30,6 +30,12 @@ AUTH = {"Authorization": f"Bearer {ST['admin_token']}", "Content-Type": "applica
 UNCENSORED_URL = ("https://huggingface.co/bartowski/"
                   "Qwen2.5-Coder-14B-Instruct-abliterated-GGUF")
 
+# Import the SINGLE Q4_K_M file, never the repo root.
+# The repo ships 25 quants totalling ~74GB (IQ2_M..f16, Q8_0 alone is 15.7GB).
+# Importing the repo root exhausts the disk and dies with "Download process exited (1)".
+GGUF_FILE = (UNCENSORED_URL +
+             "/resolve/main/Qwen2.5-Coder-14B-Instruct-abliterated-Q4_K_M.gguf")
+
 # name -> (modality, model_ref, options). Deleted-then-recreated each run.
 CORE = [
     ("nexus-forge", "image",
@@ -119,10 +125,9 @@ def import_jobs():
 
 
 def find_job():
-    """Match by repo/url substring. The POST response has no stable ident key, so
-    never rely on one - match the job in the list instead."""
+    """Match by substring. The job key is `id`, not `ident`."""
     for j in import_jobs():
-        blob = " ".join(str(j.get(k, "")) for k in ("url", "repo", "name", "ident", "id"))
+        blob = " ".join(str(j.get(k, "")) for k in ("url", "repo", "name", "id"))
         if "abliterated" in blob.lower():
             return j
     return None
@@ -130,15 +135,24 @@ def find_job():
 
 DONE = ("complete", "failed", "error", "cancelled")
 
+# Reap dead imports first. A repo-root import pulled ~74GB before failing; if that
+# partial data is still on disk it will block the real single-file download.
+for j in import_jobs():
+    if "abliterated" in json.dumps(j).lower() and j.get("status") in DONE:
+        jid = j.get("id")
+        code, _ = call("DELETE", f"/_kui/api/catalog/imports/{jid}")
+        print(f"  reaped dead import {jid} ({j.get('status')}, "
+              f"{round((j.get('bytes') or 0) / 1e9, 1)}GB) http={code}")
+
 job = find_job()
-if job:
-    print(f"  existing import found: status={job.get('status')} "
-          f"({str(job)[:120]})")
+if job and job.get("status") not in DONE:
+    print(f"  attaching to in-flight import: status={job.get('status')} "
+          f"{round((job.get('bytes') or 0) / 1e9, 1)}GB")
 else:
+    job = None
     code, resp = call("POST", "/_kui/api/catalog/imports",
-                      {"url": UNCENSORED_URL, "kind": "auto", "name": "",
-                       "revision": None})
-    print(f"  import requested http={code} {str(resp)[:200]}")
+                      {"url": GGUF_FILE, "kind": "auto", "name": "", "revision": None})
+    print(f"  import requested http={code} url=...Q4_K_M.gguf {str(resp)[:160]}")
     job = find_job()
 
 if job and job.get("status") not in DONE:
@@ -185,8 +199,8 @@ else:
             if out.get("status") == "error":
                 print("  attached+ollama failed, retrying as hf source...")
                 out = create(UNCENSORED_NAME, "text",
-                             {"source": "hf", "id": UNCENSORED_URL.split("/")[-1],
-                              "engine": "ollama"}, {"ctx": 8192})
+                             {"source": "hf", "id": "Qwen2.5-Coder-14B-Instruct-abliterated-GGUF",
+                              "variant": "Q4_K_M", "engine": "ollama"}, {"ctx": 8192})
             # If the uncensored model did not take, put the censored one straight back
             if out.get("status") == "error":
                 print("  uncensored deploy failed -> restoring censored nexus-chat")
