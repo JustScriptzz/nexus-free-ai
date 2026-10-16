@@ -110,7 +110,16 @@ for name, modality, model, options in CORE:
         delete(cur)
     create(name, modality, model, options)
 
-print("\n== 3. uncensored model: import the GGUF, then deploy it ==")
+print("\n== 3. uncensored model (opt-in) ==")
+if os.environ.get("TRY_UNCENSORED") != "1":
+    print("  skipped. The API import path returns 500 on this host.")
+    print("  Set TRY_UNCENSORED=1 to retry, or import the GGUF by hand:")
+    print(f"    {GGUF_FILE}")
+    print("\n== 4. wait for everything to settle ==")
+    for d in deployments():
+        print(f"  {d.get('status'):6s} {d.get('name'):18s} "
+              f"{d.get('spec', {}).get('model', {}).get('id')}")
+    sys.exit(0)
 
 
 def import_jobs():
