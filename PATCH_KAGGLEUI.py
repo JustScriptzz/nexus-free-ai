@@ -75,10 +75,23 @@ def main() -> None:
     print(f"copied {src} -> {DST}")
 
     app = DST / "server" / "app.py"
+    auth = DST / "server" / "auth.py"
     gw = DST / "gateway" / "openai.py"
     index = DST / "static" / "index.html"
 
     edits.clear()
+    # The real gate. gateway/common.check_access() calls auth.has_access() for EVERY
+    # /v1 call, so patching only app.require_access lets Studio list models while every
+    # real request 401s. has_access() is the single place that has to return True.
+    edits.append((auth,
+                  '    def has_access(self, request: Request, settings: Settings) -> bool:\n'
+                  '        if not settings.access.password_enabled:\n'
+                  '            return True\n'
+                  '        if self.is_admin(request):\n'
+                  '            return True\n'
+                  '        return self._eq(request.cookies.get(ACCESS_COOKIE), self.access_cookie_value())',
+                  f'    def has_access(self, request: Request, settings: Settings) -> bool:\n'
+                  f'        return True  # {MARK}: guests in, no password', True))
     edits.append((app,
                   '    def require_access(request: Request) -> None:\n'
                   '        if not state.auth.has_access(request, state.settings):\n'
@@ -98,7 +111,7 @@ def main() -> None:
                   '            raise GatewayError(400, "SFW filter: explicit sexual content is not allowed.")\n'
                   '        dep = find(request, body.get("model"), "image")', True))
 
-    for p in (app, gw):
+    for p in (app, auth, gw):
         if not p.exists():
             print(f"ABORT missing {p}", file=sys.stderr)
             sys.exit(1)
@@ -121,9 +134,9 @@ def main() -> None:
         sys.exit(1)
 
     import py_compile
-    for p in (app, gw):
+    for p in (app, auth, gw):
         py_compile.compile(str(p), doraise=True)
-    print("  syntax OK for app.py + openai.py")
+    print("  syntax OK for app.py + auth.py + openai.py")
     print("\nOK. Now run this in the same kernel:\n")
     print(f"""import sys
 sys.path.insert(0, {str(DST)!r})
