@@ -137,12 +137,22 @@ DONE = ("complete", "failed", "error", "cancelled")
 
 # Reap dead imports first. A repo-root import pulled ~74GB before failing; if that
 # partial data is still on disk it will block the real single-file download.
+reaped = 0
 for j in import_jobs():
     if "abliterated" in json.dumps(j).lower() and j.get("status") in DONE:
         jid = j.get("id")
         code, _ = call("DELETE", f"/_kui/api/catalog/imports/{jid}")
+        reaped += 1
         print(f"  reaped dead import {jid} ({j.get('status')}, "
               f"{round((j.get('bytes') or 0) / 1e9, 1)}GB) http={code}")
+
+# Reaping unlinks a multi-GB tree server-side. Posting a fresh import straight
+# after can land mid-cleanup and return 500, so let the filesystem settle.
+if reaped:
+    print("  waiting 90s for the server to finish deleting the old files")
+    for i in range(9):
+        time.sleep(10)
+        print(f"    {10 * (i + 1)}s", flush=True)
 
 job = find_job()
 if job and job.get("status") not in DONE:
