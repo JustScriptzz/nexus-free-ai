@@ -16,14 +16,26 @@ still runs, just on CPU.
 
 # ---------------------------------------------------------------- 1. install
 # kaggleui is NOT on PyPI - it ships as a GitHub release wheel.
+# NOTE: marimo cells are plain Python. There is no `!` shell magic here, so
+# everything goes through subprocess.
 CELL_INSTALL = """
-!pip install -q --no-cache-dir https://github.com/UltraFEmotes/KaggleUI/releases/download/v0.2.9/kaggleui-0.2.9-py3-none-any.whl
-!pip install -q --no-cache-dir zstandard
+import subprocess
+
+subprocess.run([
+    "pip", "install", "-q", "--no-cache-dir",
+    "https://github.com/UltraFEmotes/KaggleUI/releases/download/v0.2.9/"
+    "kaggleui-0.2.9-py3-none-any.whl",
+], check=True)
+print("kaggleui installed")
 """
 
 # Ollama's own installer needs the zstd CLI, not just the Python lib.
 CELL_ZSTD = """
-!apt-get install -y -qq zstd 2>/dev/null || (which zstd || echo "NO_ZSTD_CLI")
+import subprocess
+
+r = subprocess.run(["apt-get", "install", "-y", "-qq", "zstd"],
+                   capture_output=True, text=True)
+print(r.stdout[-400:] or r.stderr[-400:])
 """
 
 # ---------------------------------------------------------------- 2. launch
